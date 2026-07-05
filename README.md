@@ -1,38 +1,138 @@
+# SIFAR++: Temporal Prompting for Efficient Video Understanding with Image Vision Transformers
 
-# DinoV3 Base and Small Model Finetuning on Video Datasets
+Official implementation of **SIFAR++**, a parameter-efficient framework for video understanding that extends the Super Image (SIFAR) representation with **learnable temporal prompt tokens** for Vision Transformers.
 
-Finetuning **DinoV3** (small and base) pretrained checkpoints on video classification datasets (Kinetics-400, Something-Something-v2, etc.) using SIFAR-style input or MSN-style pretraining.
+The framework enables image-pretrained ViTs (e.g., DinoV3) to capture temporal information without introducing heavy temporal backbones.
 
-## A. Dataset Preparation
+---
 
-1. Create annotation files: `train.txt` and `val.txt`
-2. Format of each line:
-   ```
-   /raid/abircs/Datasets/Kinetics400/train_256/playing_drums/GJJUUAxgIYo_000007_000017.mp4 1 300 230
-   ```
-   → `video_path` `label` `start_frame` `end_frame`
+## Overview
 
-3. Pass the **folder containing** these txt files (folder path) to `--data_dir`
+```
+Video Frames
+      │
+      ▼
+ Super Image (SIFAR)
+      │
+      ▼
+Vision Transformer
++ Learnable Temporal Prompt Tokens
+      │
+      ▼
+Video Classification
+```
 
-4. Update `video_dataset_config.py` with your dataset name and paths
+Temporal prompts are prepended to the patch embeddings before passing them through the Vision Transformer.
 
-### Note:- For conda environment use requirements.txt or env.yaml files.
+```python
+prompt = nn.Parameter(torch.randn(1, num_prompts, dim))
+x = torch.cat([prompt.expand(B, -1, -1), patch_tokens], dim=1)
+```
 
-## B. Training Details
+---
 
-### General Arguments
+# Repository Features
 
-| Argument          | Kinetics-400       | SSv2              | Notes                              |
-|-------------------|--------------------|-------------------|------------------------------------|
-| `--class_numbers` | 400                | 174               | Number of classes                  |
-| `--model`         | `dino_small`       | `dino_small`      | or `dino_base`                     |
-| `--duration`      | 16                 | 16                | Number of frames sampled           |
+- ✅ SIFAR++ Temporal Prompting
+- ✅ DinoV3 Small & Base finetuning
+- ✅ Support for Kinetics-400
+- ✅ Support for Something-Something V2
+- ✅ Distributed multi-GPU training
+- ✅ PyAV video loading
+- ✅ MSN-pretrained checkpoint finetuning
+- ✅ Standard DinoV3 finetuning
 
-### 1. Standard SIFAR-style DinoV3 Finetuning
+---
 
-Use `--dino_model_path` + **do not** use `--msn_pretraining`
+# Dataset Preparation
 
-**Example – DinoV3 Small (SIFAR)**
+Create two annotation files
+
+```
+train.txt
+val.txt
+```
+
+Each line should follow the format
+
+```
+video_path label start_frame end_frame
+```
+
+Example
+
+```
+/raid/abircs/Datasets/Kinetics400/train_256/playing_drums/GJJUUAxgIYo_000007_000017.mp4 1 300 230
+```
+
+where
+
+| Field | Description |
+|-------|-------------|
+| video_path | Path to the video |
+| label | Integer class label |
+| start_frame | Starting frame index |
+| end_frame | Ending frame index |
+
+Place both annotation files inside a single directory and provide that directory using
+
+```bash
+--data_dir /path/to/dataset
+```
+
+Also update
+
+```
+video_dataset_config.py
+```
+
+with your dataset configuration.
+
+---
+
+# Environment
+
+Install dependencies using either
+
+```bash
+pip install -r requirements.txt
+```
+
+or
+
+```bash
+conda env create -f env.yaml
+```
+
+---
+
+# Training
+
+## Common Arguments
+
+| Argument | Kinetics-400 | Something-Something V2 | Description |
+|-----------|--------------|------------------------|-------------|
+| `--class_numbers` | 400 | 174 | Number of classes |
+| `--model` | `dino_small` / `dino_base` | Same | Backbone |
+| `--duration` | 16 | 16 | Number of sampled frames |
+
+---
+
+# 1. Standard DinoV3 Finetuning (SIFAR++)
+
+Use
+
+```
+--dino_model_path
+```
+
+Do **not** enable
+
+```
+--msn_pretraining
+```
+
+## DinoV3 Small
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --nproc_per_node=2 --master_port=28529 main.py \
@@ -45,62 +145,110 @@ CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --nproc_per_node=2 -
   --mixup 0.8 --cutmix 1.0 --drop-path 0.05 \
   --pretrained --warmup-epochs 5 --no-amp \
   --model dino_small \
-  --output_dir /home/dasabir/orcd/scratch/sudipta/workspace/Sudipta_MSN_Dino/fine/Dino_MSN_Finetune/output/test_1 \
-  --weight-decay 0.01 --clip-grad 1.0 \
+  --output_dir output/test_1 \
+  --weight-decay 0.01 \
+  --clip-grad 1.0 \
   --class_numbers 400 \
-  --dino_model_path /home/dasabir/orcd/scratch/sudipta/workspace/Sudipta_MSN_Dino/Dino_MSN_Finetune/dino_repo/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
+  --dino_model_path path/to/dinov3_small.pth
 ```
 
-**Example – DinoV3 Base (SIFAR)**
+---
+
+## DinoV3 Base
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --nproc_per_node=2 --master_port=28529 main.py \
   --data_dir /home/dasabir/orcd/scratch/datasets/Kinetics400_sifar \
-  --use_pyav --dataset kinetics400 \
+  --use_pyav \
+  --dataset kinetics400 \
   --opt adamw --lr 5e-4 --epochs 30 --sched cosine \
   --duration 16 --batch-size 4 --super_img_rows 4 \
   --num_workers 16 --disable_scaleup \
   --mixup 0.8 --cutmix 1.0 --drop-path 0.05 \
   --pretrained --warmup-epochs 5 --no-amp \
   --model dino_base \
-  --output_dir /home/dasabir/orcd/scratch/sudipta/workspace/Sudipta_MSN_Dino/fine/Dino_MSN_Finetune/output/test_1 \
-  --weight-decay 0.01 --clip-grad 1.0 \
+  --output_dir output/test_1 \
+  --weight-decay 0.01 \
+  --clip-grad 1.0 \
   --class_numbers 400 \
-  --dino_model_path /home/dasabir/orcd/scratch/sudipta/workspace/Sudipta_MSN_Dino/Dino_MSN_Finetune/dino_repo/dinov3_vitb16_pretrain.pth
+  --dino_model_path path/to/dinov3_base.pth
 ```
 
-### 2. MSN-style Finetuning of DinoV3
+---
 
-Use `--msn_model_path` + `--msn_pretraining True`
+# 2. MSN-Pretrained DinoV3 Finetuning
 
-**Example – MSN-pretrained DinoV3 Small**
+Enable
+
+```bash
+--msn_pretraining True
+```
+
+and provide
+
+```
+--msn_model_path
+```
+
+Example
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --nproc_per_node=2 --master_port=28529 main.py \
   --data_dir /home/dasabir/orcd/scratch/datasets/Kinetics400_sifar \
-  --use_pyav --dataset kinetics400 \
+  --use_pyav \
+  --dataset kinetics400 \
   --opt adamw --lr 5e-4 --epochs 30 --sched cosine \
   --duration 16 --batch-size 4 --super_img_rows 4 \
   --num_workers 16 --disable_scaleup \
   --mixup 0.8 --cutmix 1.0 --drop-path 0.05 \
   --pretrained --warmup-epochs 5 --no-amp \
   --model dino_small \
-  --output_dir /home/dasabir/orcd/scratch/sudipta/workspace/Sudipta_MSN_Dino/fine/Dino_MSN_Finetune/output/test_1 \
-  --weight-decay 0.01 --clip-grad 1.0 \
+  --output_dir output/test_1 \
+  --weight-decay 0.01 \
+  --clip-grad 1.0 \
   --class_numbers 400 \
   --msn_pretraining True \
-  --msn_model_path /home/dasabir/orcd/scratch/sudipta/workspace/Sudipta_MSN_Dino/Dino_MSN_Pretraining/output/Dino_small_K400_with_lr_1e-6_and_fview_2/checkpoint.pth
+  --msn_model_path path/to/checkpoint.pth
 ```
 
-## C. Pretrained Checkpoints
+---
 
-- **DinoV3 Base** (LVD pretraining): [[link](https://drive.google.com/drive/folders/1e1PLmTIKrMzgnhplKvWIleIFo5iknFI6)]
-- **MSN-pretrained DinoV3 checkpoints**: [[link](https://drive.google.com/drive/folders/14y_jOugOtlDFJOaRJaehSfcXvxRG6lvb)] *(continuously updated)*
+# Pretrained Checkpoints
 
-## Contact
+| Model | Link |
+|-------|------|
+| DinoV3 Base (LVD Pretraining) | https://drive.google.com/drive/folders/1e1PLmTIKrMzgnhplKvWIleIFo5iknFI6 |
+| MSN-pretrained DinoV3 | https://drive.google.com/drive/folders/14y_jOugOtlDFJOaRJaehSfcXvxRG6lvb |
 
-**Author:** Sudipta Sarkar  
-**Date:** 16 Feb 2026  
-**Email:** sudiptasarkar3600@gmail.com
+---
 
+# Citation
 
+If you find this repository useful in your research, please consider citing our work.
+
+```bibtex
+@article{SIFARPP2026,
+  title={SIFAR++: Temporal Prompting for Efficient Video Understanding with Image Vision Transformers},
+  author={Sudipta Sarkar},
+  year={2026}
+}
+```
+
+---
+
+# Contact
+
+**Sudipta Sarkar**
+
+📧 sudiptasarkar3600@gmail.com
+
+---
+
+## Acknowledgements
+
+This repository builds upon the excellent work of:
+
+- DinoV3
+- Vision Transformer (ViT)
+- SIFAR
+- MSN
