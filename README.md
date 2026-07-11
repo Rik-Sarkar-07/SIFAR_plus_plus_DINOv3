@@ -222,17 +222,14 @@ CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --nproc_per_node=2 -
 
 ---
 
+---
+
 # Citation
 
-If you find this repository useful in your research, please consider citing our work.
+The accompanying paper is currently under review. Citation information will be added once the manuscript becomes publicly available.
 
-```bibtex
-@article{SIFARPP2026,
-  title={SIFAR++: Temporal Prompting for Efficient Video Understanding with Image Vision Transformers},
-  author={Sudipta Sarkar},
-  year={2026}
-}
-```
+---
+
 
 ---
 
